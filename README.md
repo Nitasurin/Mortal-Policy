@@ -4,7 +4,8 @@ This repository is a branch of  [**Mortal original repository**](https://github.
 
 
 ## Overview
-Initially developed in 2022 based on Mortal V2, migration of modified code to Mortal V4 in 2024  this branch features:
+Initially developed in 2022 based on Mortal V2, migration of modified code to Mortal V4 in 2024   
+this branch features:
 - More stable performance optimization process
 - Enhanced steady-state performance
 

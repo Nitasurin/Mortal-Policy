@@ -1,24 +1,9 @@
-<p align="center">
-  <img src="https://github.com/Equim-chan/Mortal/raw/main/docs/src/assets/logo.png" width="550" />
-</p>
+# Mortal-PG
+This repository represents an branch of the original Mortal project, transitioning from value-based methods to policy gradient methods. Initially developed in 2022 based on the Mortal V2 architecture.It features a more stable performance optimization process and enhanced final capabilities.
+we have now successfully migrated the improved policy optimization code to Mortal V4's architecture. 
+# Benchmark and code
+Coming soon.
 
-# Mortal
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Equim-chan/Mortal/libriichi.yml?branch=main)](https://github.com/Equim-chan/Mortal/actions/workflows/libriichi.yml)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Equim-chan/Mortal/docs.yml?branch=main&label=docs)](https://mortal.ekyu.moe)
-[![dependency status](https://deps.rs/repo/github/Equim-chan/Mortal/status.svg)](https://deps.rs/repo/github/Equim-chan/Mortal)
-![GitHub top language](https://img.shields.io/github/languages/top/Equim-chan/Mortal)
-![Lines of code](https://www.aschey.tech/tokei/github/Equim-chan/Mortal)
-![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/Equim-chan/Mortal)
-[![license](https://img.shields.io/github/license/Equim-chan/Mortal)](https://github.com/Equim-chan/Mortal/blob/main/LICENSE)
-
-[![Donate](https://img.shields.io/badge/Donate-%E2%9D%A4%EF%B8%8F-blue?style=social)](https://mortal.ekyu.moe/donate.html)
-
-Mortal ([凡夫](https://www.mdbg.net/chinese/dictionary?wdqb=%E5%87%A1%E5%A4%AB)) is a free and open source AI for Japanese mahjong, powered by deep reinforcement learning.
-
-Read the [**Documentation**](https://mortal.ekyu.moe) for everything about this work.
-
-## Okay cool now give me the weights!
-Read [this post](https://gist.github.com/Equim-chan/cf3f01735d5d98f1e7be02e94b288c56) for details regarding this topic.
 
 ## License
 ### Code

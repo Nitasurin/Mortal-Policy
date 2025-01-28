@@ -13,8 +13,9 @@ class FileDatasetsIter(IterableDataset):
         version,
         file_list,
         pts,
+        shared_stats=None,
         oracle = False,
-        file_batch_size = 20, # hint: around 660 instances per file
+        file_batch_size = 20, 
         reserve_ratio = 0,
         player_names = None,
         excludes = None,
@@ -35,13 +36,17 @@ class FileDatasetsIter(IterableDataset):
         self.enable_augmentation = enable_augmentation
         self.augmented_first = augmented_first
         self.iterator = None
+        self.shared_stats = shared_stats 
 
     def build_iter(self):
-        # do not put it in __init__, it won't work on Windows
         self.grp = GRP(**config['grp']['network'])
         grp_state = torch.load(config['grp']['state_file'], weights_only=True, map_location=torch.device('cpu'))
         self.grp.load_state_dict(grp_state['model'])
-        self.reward_calc = RewardCalculator(self.grp, self.pts)
+        self.reward_calc = RewardCalculator(
+            self.grp,
+            self.pts,
+            shared_stats=self.shared_stats  
+        )
 
         for _ in range(self.num_epochs):
             yield from self.load_files(self.augmented_first)
@@ -49,9 +54,7 @@ class FileDatasetsIter(IterableDataset):
                 yield from self.load_files(not self.augmented_first)
 
     def load_files(self, augmented):
-        # shuffle the file list for each epoch
         random.shuffle(self.file_list)
-
         self.loader = GameplayLoader(
             version = self.version,
             oracle = self.oracle,
@@ -88,8 +91,6 @@ class FileDatasetsIter(IterableDataset):
                 actions = game.take_actions()
                 masks = game.take_masks()
                 at_kyoku = game.take_at_kyoku()
-                dones = game.take_dones()
-                apply_gamma = game.take_apply_gamma()
 
                 # per game
                 grp = game.take_grp()
@@ -99,27 +100,15 @@ class FileDatasetsIter(IterableDataset):
 
                 grp_feature = grp.take_feature()
                 rank_by_player = grp.take_rank_by_player()
-                kyoku_rewards = self.reward_calc.calc_delta_pt(player_id, grp_feature, rank_by_player)
-                assert len(kyoku_rewards) >= at_kyoku[-1] + 1 # usually they are equal, unless there is no action in the last kyoku
-
-                final_scores = grp.take_final_scores()
-                scores_seq = np.concatenate((grp_feature[:, 3:] * 1e4, [final_scores]))
-                rank_by_player_seq = (-scores_seq).argsort(-1, kind='stable').argsort(-1, kind='stable')
-                player_ranks = rank_by_player_seq[:, player_id]
-
-                steps_to_done = np.zeros(game_size, dtype=np.int64)
-                for i in reversed(range(game_size)):
-                    if not dones[i]:
-                        steps_to_done[i] = steps_to_done[i + 1] + int(apply_gamma[i])
+                advantage = self.reward_calc.calc_delta_pt(player_id, grp_feature, rank_by_player)
+                assert len(advantage) >= at_kyoku[-1] + 1 
 
                 for i in range(game_size):
                     entry = [
                         obs[i],
                         actions[i],
                         masks[i],
-                        steps_to_done[i],
-                        kyoku_rewards[at_kyoku[i]],
-                        player_ranks[at_kyoku[i] + 1],
+                        advantage[at_kyoku[i]],
                     ]
                     if self.oracle:
                         entry.insert(1, invisible_obs[i])

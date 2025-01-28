@@ -7,7 +7,7 @@ import numpy as np
 import time
 import gc
 from os import path
-from model import Brain, DQN
+from model import Brain, CategoricalPolicy
 from player import TrainPlayer
 from common import send_msg, recv_msg
 from config import config
@@ -19,8 +19,8 @@ def main():
     num_blocks = config['resnet']['num_blocks']
     conv_channels = config['resnet']['conv_channels']
 
-    mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels).to(device).eval()
-    dqn = DQN(version=version).to(device)
+    mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").to(device).eval()
+    dqn = CategoricalPolicy().to(device).eval()
     if config['online']['enable_compile']:
         mortal.compile()
         dqn.compile()

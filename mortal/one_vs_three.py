@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import secrets
 import os
-from model import Brain, DQN
+from model import Brain,CategoricalPolicy
 from engine import MortalEngine
 from libriichi.arena import OneVsThree
 from config import config
@@ -29,8 +29,8 @@ def main():
         version = cham_cfg['control'].get('version', 1)
         conv_channels = cham_cfg['resnet']['conv_channels']
         num_blocks = cham_cfg['resnet']['num_blocks']
-        mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
-        dqn = DQN(version=version).eval()
+        mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
+        dqn = CategoricalPolicy().eval()
         mortal.load_state_dict(state['mortal'])
         dqn.load_state_dict(state['current_dqn'])
         if cfg['champion']['enable_compile']:
@@ -52,8 +52,8 @@ def main():
     version = chal_cfg['control'].get('version', 1)
     conv_channels = chal_cfg['resnet']['conv_channels']
     num_blocks = chal_cfg['resnet']['num_blocks']
-    mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
-    dqn = DQN(version=version).eval()
+    mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
+    dqn = CategoricalPolicy().eval()
     mortal.load_state_dict(state['mortal'])
     dqn.load_state_dict(state['current_dqn'])
     if cfg['challenger']['enable_compile']:

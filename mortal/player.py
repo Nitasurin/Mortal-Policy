@@ -5,7 +5,7 @@ import shutil
 import secrets
 import logging
 from os import path
-from model import Brain, DQN
+from model import Brain, DQN,CategoricalPolicy
 from engine import MortalEngine
 from libriichi.stat import Stat
 from libriichi.arena import OneVsThree
@@ -21,8 +21,8 @@ class TestPlayer:
         version = cfg['control'].get('version', 1)
         conv_channels = cfg['resnet']['conv_channels']
         num_blocks = cfg['resnet']['num_blocks']
-        stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
-        stable_dqn = DQN(version=version).eval()
+        stable_mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
+        stable_dqn = CategoricalPolicy().eval()
         stable_mortal.load_state_dict(state['mortal'])
         stable_dqn.load_state_dict(state['current_dqn'])
         if baseline_cfg['enable_compile']:
@@ -82,10 +82,11 @@ class TrainPlayer:
         version = cfg['control'].get('version', 1)
         conv_channels = cfg['resnet']['conv_channels']
         num_blocks = cfg['resnet']['num_blocks']
-        stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks).eval()
-        stable_dqn = DQN(version=version).eval()
+        stable_mortal = Brain(version=version, conv_channels=conv_channels, num_blocks=num_blocks,Norm="GN").eval()
+        stable_dqn = CategoricalPolicy().eval()
         stable_mortal.load_state_dict(state['mortal'])
-        stable_dqn.load_state_dict(state['current_dqn'])
+        stable_dqn.load_state_dict(state['policy_net'])
+
         if baseline_cfg['enable_compile']:
             stable_mortal.compile()
             stable_dqn.compile()
@@ -110,10 +111,6 @@ class TrainPlayer:
         self.train_seed = 10000
 
         self.seed_count = cfg['games'] // 4
-        self.boltzmann_epsilon = cfg['boltzmann_epsilon']
-        self.boltzmann_temp = cfg['boltzmann_temp']
-        self.top_p = cfg['top_p']
-
         self.repeats = cfg['repeats']
         self.repeat_counter = 0
 
@@ -124,9 +121,7 @@ class TrainPlayer:
             dqn,
             is_oracle = False,
             version = self.chal_version,
-            boltzmann_epsilon = self.boltzmann_epsilon,
-            boltzmann_temp = self.boltzmann_temp,
-            top_p = self.top_p,
+            explore = True,
             device = device,
             enable_amp = True,
             name = 'trainee',

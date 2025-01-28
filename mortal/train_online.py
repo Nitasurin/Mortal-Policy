@@ -1,6 +1,5 @@
 def train():
     import prelude
-
     import logging
     import sys
     import os
@@ -10,6 +9,7 @@ def train():
     import shutil
     import random
     import torch
+    import math
     from os import path
     from glob import glob
     from datetime import datetime
@@ -18,15 +18,18 @@ def train():
     from torch.amp import GradScaler
     from torch.nn.utils import clip_grad_norm_
     from torch.utils.data import DataLoader
+    from torch.distributions import Categorical
     from torch.utils.tensorboard import SummaryWriter
     from common import submit_param, parameter_count, drain, filtered_trimmed_lines, tqdm
     from player import TestPlayer
     from dataloader import FileDatasetsIter, worker_init_fn
     from lr_scheduler import LinearWarmUpCosineAnnealingLR
-    from model import Brain, DQN, AuxNet
+    from model import Brain, CategoricalPolicy
     from libriichi.consts import obs_shape
     from config import config
-
+    from copy import deepcopy
+    from multiprocessing import Manager
+    
     version = config['control']['version']
 
     online = config['control']['online']
@@ -35,9 +38,8 @@ def train():
     save_every = config['control']['save_every']
     test_every = config['control']['test_every']
     submit_every = config['control']['submit_every']
+    old_update_every= config['control']['old_update_every']
     test_games = config['test_play']['games']
-    min_q_weight = config['cql']['min_q_weight']
-    next_rank_weight = config['aux']['next_rank_weight']
     assert save_every % opt_step_every == 0
     assert test_every % save_every == 0
 
@@ -47,7 +49,6 @@ def train():
     enable_compile = config['control']['enable_compile']
 
     pts = config['env']['pts']
-    gamma = config['env']['gamma']
     file_batch_size = config['dataset']['file_batch_size']
     reserve_ratio = config['dataset']['reserve_ratio']
     num_workers = config['dataset']['num_workers']
@@ -59,25 +60,28 @@ def train():
     weight_decay = config['optim']['weight_decay']
     max_grad_norm = config['optim']['max_grad_norm']
 
-    mortal = Brain(version=version, **config['resnet']).to(device)
-    dqn = DQN(version=version).to(device)
-    aux_net = AuxNet((4,)).to(device)
-    all_models = (mortal, dqn, aux_net)
+    entropy_weight = config['policy']['entropy_weight']
+    clip_ratio = config['policy']['clip_ratio']
+    dual_clip = config['policy']['dual_clip']
+
+    mortal = Brain(version=version, **config['resnet'], Norm="GN").to(device)
+    policy_net = CategoricalPolicy().to(device)
+    all_models = (mortal, policy_net)
     if enable_compile:
         for m in all_models:
             m.compile()
 
+    Old_mortal = deepcopy(mortal)
+    Old_policy_net = deepcopy(policy_net)
+    
     logging.info(f'version: {version}')
     logging.info(f'obs shape: {obs_shape(version)}')
     logging.info(f'mortal params: {parameter_count(mortal):,}')
-    logging.info(f'dqn params: {parameter_count(dqn):,}')
-    logging.info(f'aux params: {parameter_count(aux_net):,}')
-
-    mortal.freeze_bn(config['freeze_bn']['mortal'])
+    logging.info(f'policy params: {parameter_count(policy_net):,}')
 
     decay_params = []
     no_decay_params = []
-    for model in all_models:
+    for model in (mortal, policy_net):
         params_dict = {}
         to_decay = set()
         for mod_name, mod in model.named_modules():
@@ -103,23 +107,33 @@ def train():
     steps = 0
     state_file = config['control']['state_file']
     best_state_file = config['control']['best_state_file']
+    manager = Manager()
+    shared_stats = {
+        'count': manager.Value('i', 0),
+        'mean': manager.Value('d', 0.0),
+        'M2': manager.Value('d', 0.0),
+        'lock': manager.Lock()
+            }
     if path.exists(state_file):
-        state = torch.load(state_file, weights_only=True, map_location=device)
+        state = torch.load(state_file, weights_only=False, map_location=device)
         timestamp = datetime.fromtimestamp(state['timestamp']).strftime('%Y-%m-%d %H:%M:%S')
         logging.info(f'loaded: {timestamp}')
         mortal.load_state_dict(state['mortal'])
-        dqn.load_state_dict(state['current_dqn'])
-        aux_net.load_state_dict(state['aux_net'])
+        Old_mortal.load_state_dict(state['mortal'])
+        policy_net.load_state_dict(state['policy_net'])
+        Old_policy_net.load_state_dict(state['policy_net'])
         if not online or state['config']['control']['online']:
             optimizer.load_state_dict(state['optimizer'])
             scheduler.load_state_dict(state['scheduler'])
+            if 'shared_stats' in state and state['shared_stats'] is not None:
+                shared_stats['count'].value = state['shared_stats']['count']
+                shared_stats['mean'].value = state['shared_stats']['mean']
+                shared_stats['M2'].value = float(state['shared_stats']['variance'] * state['shared_stats']['count']) 
         scaler.load_state_dict(state['scaler'])
         best_perf = state['best_perf']
         steps = state['steps']
-
+       
     optimizer.zero_grad(set_to_none=True)
-    mse = nn.MSELoss()
-    ce = nn.CrossEntropyLoss()
 
     if device.type == 'cuda':
         logging.info(f'device: {device} ({torch.cuda.get_device_name(device)})')
@@ -127,22 +141,24 @@ def train():
         logging.info(f'device: {device}')
 
     if online:
-        submit_param(mortal, dqn, is_idle=True)
+        submit_param(mortal, policy_net, is_idle=True)
         logging.info('param has been submitted')
 
     writer = SummaryWriter(config['control']['tensorboard_dir'])
     stats = {
-        'dqn_loss': 0,
-        'cql_loss': 0,
-        'next_rank_loss': 0,
+        'important_ratio': 0,
+        'entropy': 0,
+        'loss': 0,
+        'stats': 0,
     }
-    all_q = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
-    all_q_target = torch.zeros((save_every, batch_size), device=device, dtype=torch.float32)
     idx = 0
 
     def train_epoch():
         nonlocal steps
         nonlocal idx
+        nonlocal stats
+        nonlocal Old_mortal
+        nonlocal Old_policy_net
 
         player_names = []
         if online:
@@ -187,6 +203,7 @@ def train():
             version = version,
             file_list = file_list,
             pts = pts,
+            shared_stats=shared_stats,
             file_batch_size = file_batch_size,
             reserve_ratio = reserve_ratio,
             player_names = player_names,
@@ -201,59 +218,57 @@ def train():
             num_workers = num_workers,
             pin_memory = True,
             worker_init_fn = worker_init_fn,
+            persistent_workers=True
         ))
 
         remaining_obs = []
         remaining_actions = []
         remaining_masks = []
-        remaining_steps_to_done = []
-        remaining_kyoku_rewards = []
-        remaining_player_ranks = []
+        remaining_advantage = []
         remaining_bs = 0
         pb = tqdm(total=save_every, desc='TRAIN', initial=steps % save_every)
 
-        def train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks):
+        def train_batch(obs, actions, masks,advantage):
             nonlocal steps
             nonlocal idx
             nonlocal pb
+            nonlocal Old_mortal
+            nonlocal Old_policy_net
 
             obs = obs.to(dtype=torch.float32, device=device)
             actions = actions.to(dtype=torch.int64, device=device)
             masks = masks.to(dtype=torch.bool, device=device)
-            steps_to_done = steps_to_done.to(dtype=torch.int64, device=device)
-            kyoku_rewards = kyoku_rewards.to(dtype=torch.float64, device=device)
-            player_ranks = player_ranks.to(dtype=torch.int64, device=device)
+            advantage = advantage.to(dtype=torch.float32, device=device)
             assert masks[range(batch_size), actions].all()
 
-            q_target_mc = gamma ** steps_to_done * kyoku_rewards
-            q_target_mc = q_target_mc.to(torch.float32)
+            with torch.no_grad():
+                with torch.autocast(device.type, enabled=enable_amp):
+                    old_dist = Categorical(probs=Old_policy_net(Old_mortal(obs),masks))
+                    old_log_prob = old_dist.log_prob(actions)
 
             with torch.autocast(device.type, enabled=enable_amp):
-                phi = mortal(obs)
-                q_out = dqn(phi, masks)
-                q = q_out[range(batch_size), actions]
-                dqn_loss = 0.5 * mse(q, q_target_mc)
-                cql_loss = 0
-                if not online:
-                    cql_loss = q_out.logsumexp(-1).mean() - q.mean()
+                dist = Categorical(probs=policy_net(mortal(obs),masks))
+                new_log_prob = dist.log_prob(actions)
+                ratio = (new_log_prob - old_log_prob).exp()
+                loss1 = ratio * advantage
+                loss2 = torch.clamp(ratio, 1 - clip_ratio, 1 + clip_ratio) * advantage
+                min_loss = torch.min(loss1, loss2)
+                
+                clip_loss = torch.where(
+                advantage < 0,
+                torch.max(min_loss , dual_clip * advantage),
+                min_loss
+                )
+                entropy = dist.entropy().view(-1, 1)
+                entropy_loss = entropy * (0.0 if not online else entropy_weight)
 
-                next_rank_logits, = aux_net(phi)
-                next_rank_loss = ce(next_rank_logits, player_ranks)
-
-                loss = sum((
-                    dqn_loss,
-                    cql_loss * min_q_weight,
-                    next_rank_loss * next_rank_weight,
-                ))
+                loss =  -(clip_loss + entropy_loss).mean()
             scaler.scale(loss / opt_step_every).backward()
 
             with torch.inference_mode():
-                stats['dqn_loss'] += dqn_loss
-                if not online:
-                    stats['cql_loss'] += cql_loss
-                stats['next_rank_loss'] += next_rank_loss
-                all_q[idx] = q
-                all_q_target[idx] = q_target_mc
+                stats['important_ratio'] += ratio.mean()
+                stats['entropy'] += entropy.mean()
+                stats['loss'] += loss
 
             steps += 1
             idx += 1
@@ -269,23 +284,17 @@ def train():
             pb.update(1)
 
             if online and steps % submit_every == 0:
-                submit_param(mortal, dqn, is_idle=False)
+                submit_param(mortal, policy_net, is_idle=False)
                 logging.info('param has been submitted')
 
             if steps % save_every == 0:
                 pb.close()
 
-                # downsample to reduce tensorboard event size
-                all_q_1d = all_q.cpu().numpy().flatten()[::128]
-                all_q_target_1d = all_q_target.cpu().numpy().flatten()[::128]
-
-                writer.add_scalar('loss/dqn_loss', stats['dqn_loss'] / save_every, steps)
+                writer.add_scalar('important_ratio/ratio', stats['important_ratio'] / save_every, steps)
+                writer.add_scalar('entropy/entropy', stats['entropy'] / save_every, steps)
+                writer.add_scalar('loss', stats['loss'] / save_every, steps)
                 if not online:
-                    writer.add_scalar('loss/cql_loss', stats['cql_loss'] / save_every, steps)
-                writer.add_scalar('loss/next_rank_loss', stats['next_rank_loss'] / save_every, steps)
-                writer.add_scalar('hparam/lr', scheduler.get_last_lr()[0], steps)
-                writer.add_histogram('q_predicted', all_q_1d, steps)
-                writer.add_histogram('q_target', all_q_target_1d, steps)
+                    pass
                 writer.flush()
 
                 for k in stats:
@@ -294,11 +303,10 @@ def train():
 
                 before_next_test_play = (test_every - steps % test_every) % test_every
                 logging.info(f'total steps: {steps:,} (~{before_next_test_play:,})')
-
+                stats_dict = save_shared_stats(shared_stats, steps, writer)
                 state = {
                     'mortal': mortal.state_dict(),
-                    'current_dqn': dqn.state_dict(),
-                    'aux_net': aux_net.state_dict(),
+                    'policy_net': policy_net.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict(),
                     'scaler': scaler.state_dict(),
@@ -306,18 +314,24 @@ def train():
                     'timestamp': datetime.now().timestamp(),
                     'best_perf': best_perf,
                     'config': config,
+                    'shared_stats': stats_dict,
                 }
                 torch.save(state, state_file)
 
                 if online and steps % submit_every != 0:
-                    submit_param(mortal, dqn, is_idle=False)
+                    submit_param(mortal, policy_net, is_idle=False)
                     logging.info('param has been submitted')
 
+                if steps % old_update_every == 0:
+                    Old_mortal = deepcopy(mortal)
+                    Old_policy_net = deepcopy(policy_net)
+    
                 if steps % test_every == 0:
-                    stat = test_player.test_play(test_games // 4, mortal, dqn, device)
+                    stat = test_player.test_play(test_games // 4, mortal, policy_net, device)
                     mortal.train()
-                    dqn.train()
-
+                    policy_net.train()
+                    
+                    
                     avg_pt = stat.avg_pt([90, 45, 0, -135]) # for display only, never used in training
                     better = avg_pt >= best_perf['avg_pt'] and stat.avg_rank <= best_perf['avg_rank']
                     if better:
@@ -386,27 +400,24 @@ def train():
                         sys.exit(0)
                 pb = tqdm(total=save_every, desc='TRAIN')
 
-        for obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks in data_loader:
+        for obs, actions, masks, advantage in data_loader:
             bs = obs.shape[0]
             if bs != batch_size:
                 remaining_obs.append(obs)
                 remaining_actions.append(actions)
                 remaining_masks.append(masks)
-                remaining_steps_to_done.append(steps_to_done)
-                remaining_kyoku_rewards.append(kyoku_rewards)
-                remaining_player_ranks.append(player_ranks)
+                remaining_advantage.append(advantage)
                 remaining_bs += bs
                 continue
-            train_batch(obs, actions, masks, steps_to_done, kyoku_rewards, player_ranks)
+            train_batch(obs, actions, masks, advantage)
 
         remaining_batches = remaining_bs // batch_size
         if remaining_batches > 0:
             obs = torch.cat(remaining_obs, dim=0)
             actions = torch.cat(remaining_actions, dim=0)
             masks = torch.cat(remaining_masks, dim=0)
-            steps_to_done = torch.cat(remaining_steps_to_done, dim=0)
-            kyoku_rewards = torch.cat(remaining_kyoku_rewards, dim=0)
-            player_ranks = torch.cat(remaining_player_ranks, dim=0)
+            advantage = torch.cat(remaining_advantage, dim=0)
+
             start = 0
             end = batch_size
             while end <= remaining_bs:
@@ -414,17 +425,40 @@ def train():
                     obs[start:end],
                     actions[start:end],
                     masks[start:end],
-                    steps_to_done[start:end],
-                    kyoku_rewards[start:end],
-                    player_ranks[start:end],
+                    advantage[start:end],
                 )
                 start = end
                 end += batch_size
         pb.close()
 
         if online:
-            submit_param(mortal, dqn, is_idle=True)
+            submit_param(mortal, policy_net, is_idle=True)
             logging.info('param has been submitted')
+
+    def save_shared_stats(shared_stats, steps, writer):
+  
+        count = shared_stats['count'].value
+        mean = shared_stats['mean'].value
+        m2 = shared_stats['M2'].value
+
+        if count == 0:
+            return {'count': 0, 'mean': 0, 'variance': 0}
+        
+        if count > 0:
+       
+            variance = m2 / count if count > 1 else 0
+            std_dev = math.sqrt(variance)
+            writer.add_scalar('stats/count', count, steps)
+            writer.add_scalar('stats/mean', mean, steps)
+            writer.add_scalar('stats/std_dev', std_dev, steps)
+            return {
+            'count': count,
+            'mean': mean,
+            'variance': variance,
+            'std_dev': std_dev
+            }
+       
+  
 
     while True:
         train_epoch()
@@ -434,6 +468,7 @@ def train():
         if not online:
             # only run one epoch for offline for easier control
             break
+    
 
 def main():
     import os
@@ -465,6 +500,7 @@ def main():
         if (code := child.wait()) != 0:
             sys.exit(code)
         time.sleep(3)
+
 
 if __name__ == '__main__':
     try:

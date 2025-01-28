@@ -5,7 +5,7 @@ import sys
 import json
 import torch
 from datetime import datetime, timezone
-from model import Brain, DQN, GRP
+from model import Brain, CategoricalPolicy, GRP
 from engine import MortalEngine
 from common import filtered_trimmed_lines
 from libriichi.mjai import Bot
@@ -38,8 +38,8 @@ def main():
         time = datetime.fromtimestamp(state['timestamp'], tz=timezone.utc).strftime('%y%m%d%H')
         tag = f'mortal{version}-b{num_blocks}c{conv_channels}-t{time}'
 
-    mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels).eval()
-    dqn = DQN(version=version).eval()
+    mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
+    dqn = CategoricalPolicy().eval()
     mortal.load_state_dict(state['mortal'])
     dqn.load_state_dict(state['current_dqn'])
 

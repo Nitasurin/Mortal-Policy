@@ -7,6 +7,10 @@ from functools import partial
 from itertools import permutations
 from libriichi.consts import obs_shape, oracle_obs_shape, ACTION_SPACE, GRP_SIZE
 
+def orthogonal_init(layer, gain=1.0):
+    nn.init.orthogonal_(layer.weight, gain=gain)
+    nn.init.constant_(layer.bias, 0)
+
 class ChannelAttention(nn.Module):
     def __init__(self, channels, ratio=16, actv_builder=nn.ReLU, bias=True):
         super().__init__()
@@ -106,7 +110,7 @@ class ResNet(nn.Module):
         return self.net(x)
 
 class Brain(nn.Module):
-    def __init__(self, *, conv_channels, num_blocks, is_oracle=False, version=1):
+    def __init__(self, *, conv_channels, num_blocks, is_oracle=False, version=1, Norm = "BN"):
         super().__init__()
         self.is_oracle = is_oracle
         self.version = version
@@ -133,6 +137,8 @@ class Brain(nn.Module):
                 pass
             case 3 | 4:
                 norm_builder = partial(nn.BatchNorm1d, conv_channels, momentum=0.01, eps=1e-3)
+                if Norm == "GN":
+                    norm_builder = partial(nn.GroupNorm, num_channels=conv_channels,num_groups=32, eps=1e-3)
             case _:
                 raise ValueError(f'Unexpected version {self.version}')
 
@@ -185,14 +191,18 @@ class Brain(nn.Module):
         self._freeze_bn = value
         return self.train(self.training)
 
-class AuxNet(nn.Module):
-    def __init__(self, dims=None):
+class CategoricalPolicy(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.dims = dims
-        self.net = nn.Linear(1024, sum(dims), bias=False)
+        self.fc1 = nn.Linear(1024, 256)
+        self.fc2 = nn.Linear(256, ACTION_SPACE)
+        orthogonal_init(self.fc1)
+        orthogonal_init(self.fc2)
 
-    def forward(self, x):
-        return self.net(x).split(self.dims, dim=-1)
+    def forward(self, phi,mask):
+        phi = torch.tanh(self.fc1(phi))
+        phi = self.fc2(phi).masked_fill(~mask, -torch.inf)
+        return torch.softmax(phi, dim=-1)
 
 class DQN(nn.Module):
     def __init__(self, *, version=1):

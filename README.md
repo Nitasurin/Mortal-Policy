@@ -7,7 +7,7 @@ This repository is a branch of  [**Mortal original repository**](https://github.
 Initially developed in 2022 based on Mortal V2, migration of modified code to Mortal V4 in 2024   
 this branch features:
 - More stable performance optimization process
-- Enhanced steady-state performance
+- Enhanced asymptotic performance
 
 ## Installation
 Consistent with the original repository. Read the [**Documentation**](https://mortal.ekyu.moe)  

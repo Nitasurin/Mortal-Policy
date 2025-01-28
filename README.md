@@ -14,7 +14,7 @@ Consistent with the original repository. Read the [**Documentation**](https://mo
 **Torch requirement:** torch2.5.1+cu124 (install via pip)
 
 ## Run
-Mortal-PG adopts an **offline to online** training approach:
+Mortal-Policy adopts an **offline to online** training approach:
 
 1. **Data Preparation**  
    Collect samples in `mjai` format.

@@ -260,7 +260,7 @@ def train():
                 min_loss
                 )
                 entropy = dist.entropy().view(-1, 1)
-                entropy_loss = entropy * (0.0 if not online else entropy_weight)
+                entropy_loss = entropy * entropy_weight
 
                 loss =  -(clip_loss + entropy_loss).mean()
             scaler.scale(loss / opt_step_every).backward()

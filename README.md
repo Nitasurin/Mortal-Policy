@@ -23,14 +23,17 @@ Mortal-Policy adopts an **offline to online** training approach:
    Rename `config.example.toml` to `config.toml` and set hyperparameters.
 
 3. **Training Stages**  
-   - *Offline Phase (Advantage Weighted Regression):*  
+   - *Offline Phase1 (Advantage Weighted Regression):*  
      Run `train_offline.py`
+   - *Offline Phase2 (Behavior Proximal Policy Optimization):*  
+    `It is optional and the code is coming soon`
+    
    - *Online Phase (Policy Gradient with Importance Sampling and PPO-style Clipping):*  
      Run `train_online.py`
 
 ⚠️ **Important Note**  
-**Advantage Weighted Regression(AWR)** is not included in the original implementation based on Mortal V2. You can try the following alternative options: **Behavior Cloning(BC)**, **Behavior Proximal Policy Optimization (BPPO)**, or **distillation** from the value-based Mortal.    
-While online-only training is possible, it is **not recommended**.This branch omits critical online training features: Opponent Pool, Policy Archive, etc.
+   While online-only training is possible, it is **not recommended**.  
+   This branch omits critical online training features: Opponent Pool, Policy Archive, etc.
 
 ## Weights & Configuration
 Maintained alignment with original Mortal repository. For details see [this post](https://gist.github.com/Equim-chan/cf3f01735d5d98f1e7be02e94b288c56).   

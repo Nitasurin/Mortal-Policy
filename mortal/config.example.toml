@@ -5,7 +5,7 @@
 version = 4
 online = false
 
-#The values retained from the original Mortal repository are preserved as-is 
+#The values retained from Mortal original repository are preserved as-is 
 #and do not necessarily imply suitability for Mortal-Policy repository
 
 state_file = '/path/to/mortal.pth'
@@ -30,6 +30,10 @@ old_update_every = 400
 games = 800
 log_dir = '/path/to/train_play'
 repeats = 1
+#Using values between 0.0 and 1.0 is unconventional and may harm results,
+#but it could stabilize optimization if other hyperparameters are poorly configured.
+explore_rate = 1.0
+
 
 [test_play]
 games = 3000
@@ -46,14 +50,18 @@ num_epochs = 1
 enable_augmentation = false
 augmented_first = false
 
+#The network architecture varies across value-based Mortal versions(original repository). 
+#MortalV1 defaults to b40c192, while V3 and V4 use b24c512. 
+#Beyond a certain scale, it has minimal impact on final performance but significantly affects training. 
+#This is simply a default configuration and not a recommendation for Mortal-policy.
 [resnet]
-conv_channels = 192
-num_blocks = 40
+conv_channels = 512
+num_blocks = 24
 
 [env]
 pts = [6.0, 4.0, 2.0, 0.0]
 
-# These hyperparameters are merely the default values and do not imply that they are optimal.
+## These hyperparameters are merely the default values and do not imply that they are optimal.
 [policy]
 awr_beta = 1.0
 awr_clip = 100

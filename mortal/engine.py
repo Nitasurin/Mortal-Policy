@@ -18,13 +18,13 @@ class MortalEngine:
         enable_quick_eval = True,
         enable_rule_based_agari_guard = False,
         name = 'NoName',
-        explore = False,
+        explore_rate = 0,
     ):
         self.engine_type = 'mortal'
         self.device = device or torch.device('cpu')
         assert isinstance(self.device, torch.device)
         self.brain = brain.to(self.device).eval()
-        self.dqn = dqn.to(self.device).eval()
+        self.dqn = dqn.to(self.device).eval()   # 
         self.is_oracle = is_oracle
         self.version = version
         self.stochastic_latent = stochastic_latent
@@ -33,7 +33,7 @@ class MortalEngine:
         self.enable_quick_eval = enable_quick_eval
         self.enable_rule_based_agari_guard = enable_rule_based_agari_guard
         self.name = name
-        self.explore = explore
+        self.explore_rate = explore_rate
 
     def react_batch(self, obs, masks, invisible_obs):
         try:
@@ -64,10 +64,9 @@ class MortalEngine:
                 phi = self.brain(obs)
                 q_out = self.dqn(phi, masks)
     
-        if self.explore:
-            greedy_actions = q_out.argmax(-1)
-            actions = Categorical(probs=q_out).sample()
-            is_greedy = (actions == greedy_actions)
+        if self.explore_rate > 0:
+            is_greedy = torch.full((batch_size,), 1-self.explore_rate, device=self.device).bernoulli().to(torch.bool)
+            actions = torch.where(is_greedy, q_out.argmax(-1), Categorical(probs=q_out).sample())
         else:
             is_greedy = torch.ones(batch_size, dtype=torch.bool, device=self.device)
             actions = q_out.argmax(-1)

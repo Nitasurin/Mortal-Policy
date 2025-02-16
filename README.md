@@ -10,12 +10,13 @@ This branch features:
 - Enhanced final performance  
 
 > **Note:**  
-> The performance results are based on a comparison with the baseline model. The baseline used for testing has been uploaded to [**RiichLab(mjai.app)**](https://mjai.app) and has maintained a stable rank across multiple evaluation batches.
+> The performance results are based on a comparison with the baseline model. The baseline used for testing has been uploaded to [**RiichLab(mjai.app)**](https://mjai.app) and has maintained the stable rank across multiple evaluation batches.
 
-![alt text](https://github.com/Nitasurin/Mortal-Policy/raw/main/docs/src/assets/mjaiapp.png)
+>![alt text](https://github.com/Nitasurin/Mortal-Policy/raw/main/docs/src/assets/mjaiapp.png)
 ## Installation
 Consistent with the original repository. Read the [**Documentation**](https://mortal.ekyu.moe)  
-**Torch requirement:** torch2.5.1+cu124 (install via pip)
+**Requirement**: PyTorch>=2.4.0   
+**Tested With**: PyTorch2.5.1+CUDA 12.4 (install via pip)
 
 ## Run
 Mortal-Policy adopts an **offline to online** training approach:
@@ -30,7 +31,7 @@ Mortal-Policy adopts an **offline to online** training approach:
    - *Offline Phase1 (Advantage Weighted Regression):*  
      Run `train_offline_phase1.py`
    - *Offline Phase2 (Behavior Proximal Policy Optimization):*  
-    `It is optional and the code is coming soon`
+    `It is optional and only suitable when online is unavailable, and the code is coming soon`
     
    - *Online Phase (Policy Gradient with Importance Sampling and PPO-style Clipping):*  
      Run `train_online.py`

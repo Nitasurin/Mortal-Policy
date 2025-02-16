@@ -109,9 +109,10 @@ class TrainPlayer:
         self.log_dir = path.abspath(cfg['log_dir'])
         self.train_key = secrets.randbits(64)
         self.train_seed = 10000
-
+        self.explore_rate = cfg['explore_rate']
         self.seed_count = cfg['games'] // 4
         self.repeats = cfg['repeats']
+
         self.repeat_counter = 0
 
     def train_play(self, mortal, dqn, device):
@@ -121,7 +122,7 @@ class TrainPlayer:
             dqn,
             is_oracle = False,
             version = self.chal_version,
-            explore = True,
+            explore_rate = self.explore_rate,
             device = device,
             enable_amp = True,
             name = 'trainee',

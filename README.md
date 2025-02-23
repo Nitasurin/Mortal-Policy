@@ -36,7 +36,8 @@ Mortal-Policy adopts an **offline to online** training approach:
    - *Online Phase (Policy Gradient with Importance Sampling and PPO-style Clipping):*  
      Run `train_online.py`
 
-   While online-only training is possible, it is **not recommended**.  
+   While online-only training is possible, it is **not recommended**.   
+   **Advantage Weighted Regression(AWR)** is not included in the original implementation based on Mortal V2. You can try the following alternative options: **Behavior Cloning(BC)** or **distillation** from the value-based Mortal.
 
 ## Weights & Configuration
 Maintained alignment with original Mortal repository. For details see [this post](https://gist.github.com/Equim-chan/cf3f01735d5d98f1e7be02e94b288c56).   

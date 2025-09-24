@@ -24,7 +24,7 @@ class TestPlayer:
         stable_mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
         stable_dqn = CategoricalPolicy().eval()
         stable_mortal.load_state_dict(state['mortal'])
-        stable_dqn.load_state_dict(state['current_dqn'])
+        stable_dqn.load_state_dict(state['policy_net'])
         if baseline_cfg['enable_compile']:
             stable_mortal.compile()
             stable_dqn.compile()

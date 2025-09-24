@@ -32,7 +32,7 @@ def main():
         mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
         dqn = CategoricalPolicy().eval()
         mortal.load_state_dict(state['mortal'])
-        dqn.load_state_dict(state['current_dqn'])
+        dqn.load_state_dict(state['policy_net'])
         if cfg['champion']['enable_compile']:
             mortal.compile()
             dqn.compile()
@@ -55,7 +55,7 @@ def main():
     mortal = Brain(version=version, num_blocks=num_blocks, conv_channels=conv_channels,Norm = "GN").eval()
     dqn = CategoricalPolicy().eval()
     mortal.load_state_dict(state['mortal'])
-    dqn.load_state_dict(state['current_dqn'])
+    dqn.load_state_dict(state['policy_net'])
     if cfg['challenger']['enable_compile']:
         mortal.compile()
         dqn.compile()
